@@ -64,6 +64,7 @@
                                 <f-message v-show="sProps.showErrorMessage" type="error" role="alert" with-icon>
                                     {{ sendToErrorMsg }}
                                 </f-message>
+                                <div v-if="resolvedAddress">Domain resolved to {{ resolvedAddress }}</div>
                                 <div v-if="ETHOrBNBAccountBalance">
                                     {{ ETHOrBNBAccountBalance }}
                                 </div>
@@ -99,6 +100,8 @@ import { eventBusMixin } from '../../mixins/event-bus.js';
 import { BNBridgeExchangeErrorCodes } from '../../plugins/bnbridge-exchange/bnbridge-exchange.js';
 import AddressField from '../AddressField/AddressField.vue';
 import FTokenValue from '@/components/core/FTokenValue/FTokenValue.vue';
+import Resolution from '@unstoppabledomains/resolution';
+const resolution = new Resolution();
 
 export default {
     name: 'SendTransactionForm',
@@ -132,6 +135,7 @@ export default {
             sendToErrorMsg: 'Enter a valid Opera FTM address',
             /** Balance of BNB or ETH account. */
             ETHOrBNBAccountBalance: '',
+            resolvedAddress: null,
         };
     },
 
@@ -252,14 +256,16 @@ export default {
         async checkAddress(_value) {
             const { sendDirection } = this;
             let validAddress = false;
-            const value = _value.trim();
+            let value = _value.trim();
 
             this.ETHOrBNBAccountBalance = '';
 
             if (sendDirection === 'OperaToOpera') {
+                value = (await this.resolveAddress(value, 'FTM')) || value;
                 validAddress = this.$fWallet.isValidAddress(value);
                 this.sendToErrorMsg = 'Enter a valid Opera FTM address';
             } else if (sendDirection === 'OperaToBinance') {
+                value = (await this.resolveAddress(value, 'BNB')) || value;
                 validAddress = this.$bnb.isBNBAddress(value);
                 this.sendToErrorMsg = 'Enter a valid BNB address';
 
@@ -284,6 +290,7 @@ export default {
                     }
                 }
             } else if (sendDirection === 'OperaToEthereum') {
+                value = (await this.resolveAddress(value, 'ETH')) || value;
                 validAddress = this.$bnb.isETHAddress(value);
                 this.sendToErrorMsg = 'Enter a valid ETH address';
 
@@ -304,6 +311,18 @@ export default {
             }
 
             return validAddress;
+        },
+
+        async resolveAddress(value, currency) {
+            this.resolvedAddress = null;
+            if (resolution.isSupportedDomainInNetwork(value)) {
+                try {
+                    this.resolvedAddress = await resolution.addr(value, currency);
+                } catch (e) {
+                    console.log(e);
+                }
+            }
+            return this.resolvedAddress;
         },
 
         checkAmount(_value) {
@@ -355,11 +374,11 @@ export default {
 
             if (this.currentAccount && data.amount) {
                 if (sendDirection === 'OperaToOpera') {
-                    data.opera_address = data.address;
+                    data.opera_address = this.resolvedAddress || data.address;
                 } else if (sendDirection === 'OperaToBinance') {
-                    data.bnb_address = data.address;
+                    data.bnb_address = this.resolvedAddress || data.address;
                 } else if (sendDirection === 'OperaToEthereum') {
-                    data.eth_address = data.address;
+                    data.eth_address = this.resolvedAddress || data.address;
                 }
 
                 // TMP!
